@@ -198,7 +198,7 @@ sub setVal
       return $vs;
     } else {
       usleep( $self->{wait_after_bad_set} );
-      carp( "get ($gs) != set ($vs) i= $i" );
+      carp( "setVal: get ($gs) != set ($vs) i= $i" );
     }
   }
 
@@ -274,48 +274,67 @@ sub setFreqCheck # TODO: remove, replace with setFreq with checkNTry
   return 0;
 }
 
-sub setVpp
+sub mkVppStr
 {
-  my ($self, $v, $ch ) = @_;
+  my ($self, $v ) = @_;
   if( !defined( $v ) ) {
     return;
   }
   my $vi    = 1000.0 * (0.0 + $v);
-  my $reg  = $ch ? 26 : 25;
 
   my $s = sprintf( "%d", int($vi) );
 
-  return $self->setReg( $reg, $s );
+  return $s;
+}
+
+sub setVpp
+{
+  my ($self, $v, $ch, $checkNTry ) = @_;
+  my $reg  = $ch ? 26 : 25;
+  my $fun = \&mkVppStr;
+  return $self->setVal( $v, $reg, $fun, $checkNTry );
+}
+
+
+sub mkBiasStr
+{
+  my ($self, $bias ) = @_;
+  if( !defined( $bias ) ) {
+    return;
+  }
+  my $bi   = 1000 + 100.0 * (0.0 + $bias);
+  my $s = sprintf( "%d", int($bi) );
+  return $s;
 }
 
 
 sub setBias
 {
-  my ($self, $bias, $ch ) = @_;
-  if( !defined( $bias ) ) {
-    return;
-  }
-  my $bi   = 1000 + 100.0 * (0.0 + $bias);
+  my ($self, $bias, $ch, $checkNTry ) = @_;
   my $reg  = $ch ? 28 : 27;
-
-  my $s = sprintf( "%d", int($bi) );
-
-  return $self->setReg( $reg, $s );
+  my $fun = \&mkBiasStr;
+  return $self->setVal( $bias, $reg, $fun, $checkNTry );
 }
 
-
-sub setDuty
+sub mkDutyStr
 {
-  my ($self, $du, $ch ) = @_;
+  my ($self, $du) = @_;
   if( !defined( $du ) ) {
     return;
   }
   my $dui   = 1000.0 * (0.0 + $du);
-  my $reg  = $ch ? 30 : 29;
-
   my $s = sprintf( "%d", int($dui) );
+  return $s;
+}
 
-  return $self->setReg( $reg, $s );
+
+
+sub setDuty
+{
+  my ($self, $du, $ch, $checkNTry ) = @_;
+  my $reg  = $ch ? 30 : 29;
+  my $fun = \&mkDutyStr;
+  return $self->setVal( $du, $reg, $fun, $checkNTry );
 }
 
 sub getDuty
@@ -334,7 +353,7 @@ sub getDuty
   return 0.0;
 }
 
-sub setDutyCheck
+sub setDutyCheck # TODO: remove
 {
   my ($self, $du, $ch ) = @_;
 
