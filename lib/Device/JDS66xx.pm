@@ -71,10 +71,12 @@ sub sendCmd
 
   my( $r_n, $rbuf );
 
+  # carp( "sendCmd: \"$cmd\"" );
+
   for( my $i = 0; $i < $self->{n_try}; ++$i ) {
     my $wn = $self->{dev}->write( $cmd );
     if( $wn != $cmdLen ) {
-      print( STDERR "warning: bad send len: $wn != $cmdLen, cmd= $cmd\n" );
+      carp( "warning: bad send len: $wn != $cmdLen, cmd= $cmd\n" );
       next;
     }
     usleep( 10000 );
@@ -91,14 +93,15 @@ sub sendCmd
     }
   }
 
-  print( STDERR "warning: fail to send cmd= $cmd\n" );
-  return '';
+  carp( "warning: fail to send cmd= $cmd\n" );
+  return;
 }
 
 sub setReg
 {
   my ($self, $reg, $val ) = @_;
 
+  # carp( "setReg $reg = $val" );
   my $s = sprintf( "\r\n:w%02d=%s.\r\n", $reg, $val );
   return $self->sendCmd( $s );
 }
@@ -109,8 +112,18 @@ sub getReg
 
   my $s = sprintf( "\r\n:r%02d=\r\n", $reg );
   my $rs = $self->sendCmd( $s, ':r' );
-  $rs =~ s/^:r\d\d=//x;
-  return $rs;
+
+  # carp( "getReg: \"$rs\"\n" );
+
+  if( $rs =~ m/^:r(\d\d)=([0-9,]+)\./x ) {
+    my $reg_ret = 0 + $1;
+    if( $reg != $reg_ret ) {
+      return;
+    }
+    $rs = $2;
+    return $rs;
+  }
+  return;
 }
 
 sub OnOff
@@ -128,7 +141,7 @@ sub setWave
 {
   my ($self, $tp, $ch ) = @_;
   if( !defined( $tp ) ) {
-    return '';
+    return;
   }
   $tp   = 0 + $tp;
   my $reg  = $ch ? 22 : 21;
@@ -137,26 +150,59 @@ sub setWave
 }
 
 
-sub setFreq
+sub mkFreqStr
 {
-  my ($self, $freq, $ch ) = @_;
+  my ($self, $freq ) = @_;
   if( !defined( $freq ) ) {
-    return '';
+    return;
   }
   $freq = 0.0 + $freq;
-  my $reg  = $ch ? 24 : 23;
-  my $range = '0';
-  my $fs = sprintf( "%d", int($freq * 100) );
+  my ($range, $fs );
 
-  if( $freq < 80 ) {
+  if( $freq < 80 ) {         # 80 Hz - in 10^{-2} * 10^{-6} Hz
     $range = '4';
     $fs = sprintf( "%d", int($freq * 1e8) );
-  } elsif( $freq < 80000 ) {
+  } elsif( $freq < 80000 ) { # 80 kHz - in 10^{-2} * 10^{-3} Hz
     $range = '3';
     $fs = sprintf( "%d", int($freq * 1e5) );
+  } else {                   # > 80kHz ; in 10^{-2} Hz
+    $range = '0';
+    $fs = sprintf( "%d", int($freq * 100) );
   }
 
-  return $self->setReg( $reg, $fs . ',' . $range );
+  return $fs . ',' . $range;
+}
+
+sub setFreq
+{
+  my ($self, $freq, $ch, $checkNTry ) = @_;
+  my $fs = $self->mkFreqStr( $freq );
+  if( ! $fs ) {
+    return;
+  }
+  my $reg  = $ch ? 24 : 23;
+  if( ! $checkNTry ) {
+    $checkNTry = 1;
+  }
+
+  TRY:
+  for my $i (1..$checkNTry) {
+    my $rs =  $self->setReg( $reg, $fs );
+    if( ! $rs ) {
+      usleep( $self->{wait_after_bad_set} );
+      next TRY;
+      # debug?
+    }
+    my $gs = $self->getReg( $reg );
+    if( defined($gs) && ( $gs eq $fs ) ) {
+      return $fs;
+    } else {
+      usleep( $self->{wait_after_bad_set} );
+      carp( "get ($gs) != set ($fs) i= $i" );
+    }
+  }
+
+  return;
 }
 
 sub getFreq
@@ -165,6 +211,7 @@ sub getFreq
   my $reg  = $ch ? 24 : 23;
   my $s = $self->getReg( $reg );
   if( !$s ) {
+    carp( "Fail to get reg $reg" );
     return 0.0;
   }
 
@@ -175,6 +222,7 @@ sub getFreq
     $fs   = 0 + $1;
     $r    = 0 + $2;
   } else {
+    carp( "Bad freq responce string: \"$s\"" );
     return 0.0;
   }
 
@@ -202,7 +250,7 @@ sub setFreqCheck
   for( my $i=0; $i<$self->{n_try}; ++$i ) {
     my $rc = $self->setFreq( $f, $ch );
     if( ! $rc ) {
-      print( STDERR "?1 \n" );
+      carp( "?1 \n" ); # TODO: hide w/o debug?
       usleep( $self->{wait_after_bad_set} );
       next;
     }
@@ -210,7 +258,7 @@ sub setFreqCheck
     if( abs( $f_in - $f ) < 10 ) {
       return 1;
     }
-  print( STDERR "?2 f= $f f_in= $f_in \n" );
+  carp( "?2 f= $f f_in= $f_in \n" ); #  TODO: hide w/o debug?
   usleep( $self->{wait_after_bad_set} );
   }
 
@@ -221,7 +269,7 @@ sub setVpp
 {
   my ($self, $v, $ch ) = @_;
   if( !defined( $v ) ) {
-    return '';
+    return;
   }
   my $vi    = 1000.0 * (0.0 + $v);
   my $reg  = $ch ? 26 : 25;
@@ -236,7 +284,7 @@ sub setBias
 {
   my ($self, $bias, $ch ) = @_;
   if( !defined( $bias ) ) {
-    return '';
+    return;
   }
   my $bi   = 1000 + 100.0 * (0.0 + $bias);
   my $reg  = $ch ? 28 : 27;
@@ -251,7 +299,7 @@ sub setDuty
 {
   my ($self, $du, $ch ) = @_;
   if( !defined( $du ) ) {
-    return '';
+    return;
   }
   my $dui   = 1000.0 * (0.0 + $du);
   my $reg  = $ch ? 30 : 29;
@@ -284,7 +332,7 @@ sub setDutyCheck
   for( my $i=0; $i<$self->{n_try}; ++$i ) {
     my $rc = $self->setDuty( $du, $ch );
     if( ! $rc ) {
-      print( STDERR "?1 \n" );
+      carp( "?1 \n" );
       usleep( $self->{wait_after_bad_set} );
       next;
     }
@@ -292,7 +340,7 @@ sub setDutyCheck
     if( abs( $du - $du_in ) < 0.01 ) {
       return 1;
     }
-  print( STDERR "?2 du= $du du_in = $du_in\n" );
+  carp( "?2 du= $du du_in = $du_in\n" );
   usleep( $self->{wait_after_bad_set} );
   }
   return 0;
