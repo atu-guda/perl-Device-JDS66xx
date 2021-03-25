@@ -6,9 +6,9 @@ use warnings;
 
 our $VERSION = '0.01';
 
+use Carp;
 use Device::SerialPort;
 use Time::HiRes qw( usleep );
-
 
 use constant {
     SIN         =>  0,
@@ -33,13 +33,13 @@ use constant {
 
 sub new
 {
-  my $class = shift;
+  my ( $class, $df ) = @_;
   my $self = {};
   bless( $self , $class );
-  $self->{devfile} = $_[0];
+  $self->{devfile} = $df;
   $self->{n_try}   = 10;
 
-  my $dobj = new Device::SerialPort( $self->{devfile}, 0 )  || die "Can't open $self->{devfile}: $!\n";
+  my $dobj = Device::SerialPort->new( $self->{devfile}, 0 )  || croak "Can't open $self->{devfile}: $!\n";
 
   $dobj->{"_DEBUG"} = 1;
   $dobj->devicetype( 'none' );
@@ -64,10 +64,9 @@ sub getDev
 
 sub sendCmd
 {
-  my $self = shift;
-  my $cmd = $_[0];
+  my ($self, $cmd, $req ) = @_;
   my $cmdLen = length( $cmd );
-  my $req = $_[1] || ':ok';
+  $req = $req || ':ok';
   my $reqLen = length( $req );
 
   my( $r_n, $rbuf );
@@ -81,7 +80,7 @@ sub sendCmd
     usleep( 10000 );
 
     ( $r_n, $rbuf ) = $self->{dev}->read( 255 );
-    $rbuf =~ s/\r\n//;
+    $rbuf =~ s/\r\n//x;
 
     if( length( $rbuf ) < $reqLen ) {
       next;
@@ -98,9 +97,7 @@ sub sendCmd
 
 sub setReg
 {
-  my $self = shift;
-  my $reg  = $_[0];
-  my $val  = $_[1];
+  my ($self, $reg, $val ) = @_;
 
   my $s = sprintf( "\r\n:w%02d=%s.\r\n", $reg, $val );
   return $self->sendCmd( $s );
@@ -108,20 +105,20 @@ sub setReg
 
 sub getReg
 {
-  my $self = shift;
-  my $reg  = $_[0];
+  my ($self, $reg) = @_;
 
   my $s = sprintf( "\r\n:r%02d=\r\n", $reg );
   my $rs = $self->sendCmd( $s, ':r' );
-  $rs =~ s/^:r\d\d=//;
+  $rs =~ s/^:r\d\d=//x;
   return $rs;
 }
 
 sub OnOff
 {
-  my $self = shift;
-  my $o1  = $_[0] ? '1' : '0';
-  my $o2  = $_[1] ? '1' : '0';
+  my ($self,$o1,$o2) = @_;
+  $o1  = $o1 ? '1' : '0';
+  $o2  = $o2 ? '1' : '0';
+
   my $s   = $o1 . ',' . $o2;
 
   return $self->setReg( 20, $s );
@@ -129,12 +126,12 @@ sub OnOff
 
 sub setWave
 {
-  my $self = shift;
-  if( !defined( $_[0] ) ) {
+  my ($self, $tp, $ch ) = @_;
+  if( !defined( $tp ) ) {
     return '';
   }
-  my $tp   = 0 + $_[0];
-  my $reg  = $_[1] ? 22 : 21;
+  $tp   = 0 + $tp;
+  my $reg  = $ch ? 22 : 21;
 
   return $self->setReg( $reg, '' . $tp );
 }
@@ -142,12 +139,12 @@ sub setWave
 
 sub setFreq
 {
-  my $self = shift;
-  if( !defined( $_[0] ) ) {
+  my ($self, $freq, $ch ) = @_;
+  if( !defined( $freq ) ) {
     return '';
   }
-  my $freq = 0.0 + $_[0];
-  my $reg  = $_[1] ? 24 : 23;
+  $freq = 0.0 + $freq;
+  my $reg  = $ch ? 24 : 23;
   my $range = '0';
   my $fs = sprintf( "%d", int($freq * 100) );
 
@@ -164,30 +161,35 @@ sub setFreq
 
 sub getFreq
 {
-  my $self = shift;
-  my $reg  = $_[0] ? 24 : 23;
+  my ($self, $ch ) = @_;
+  my $reg  = $ch ? 24 : 23;
   my $s = $self->getReg( $reg );
   if( !$s ) {
     return 0.0;
   }
-  if( ! ( $s =~ /^(\d+),(\d)/ ) ) {
+
+  my $fs   = 0;
+  my $r    = 0;
+
+  if( $s =~ /^(\d+),(\d)/x  ) {
+    $fs   = 0 + $1;
+    $r    = 0 + $2;
+  } else {
     return 0.0;
   }
 
-  my $fs   = 0 + $1;
-  my $r    = 0 + $2;
   my $freq = 0.0;
 
-  if( $r == 0 ) {
-      $freq = 1.0e-2 * $fs;
-  } elsif ( $r == 1  ) {
-      $freq = 1.0e+1  * $fs;
-  } elsif ( $r == 2  ) {
-      $freq = 1.0e+4  * $fs;
-  } elsif ( $r == 3  ) {
-      $freq = 1.0e-5 * $fs;
-  } elsif ( $r == 4  ) {
-      $freq = 1.0e-8 * $fs;
+  my %ranges = (
+      0 => 1.0e-2,
+      1 => 1.0e+1,
+      2 => 1.0e+4,
+      3 => 1.0e-5,
+      4 => 1.0e-8
+  );
+
+  if( defined( $ranges{$r} ) ) {
+     $freq = $fs * $ranges{$r};
   }
 
   return $freq;
@@ -195,9 +197,8 @@ sub getFreq
 
 sub setFreqCheck
 {
-  my $self = shift;
-  my $f  = $_[0];
-  my $ch = $_[1];
+  my ($self, $f, $ch ) = @_;
+
   for( my $i=0; $i<$self->{n_try}; ++$i ) {
     my $rc = $self->setFreq( $f, $ch );
     if( ! $rc ) {
@@ -209,22 +210,23 @@ sub setFreqCheck
     if( abs( $f_in - $f ) < 10 ) {
       return 1;
     }
-  print( STDERR "?2 \n" );
+  print( STDERR "?2 f= $f f_in= $f_in \n" );
   usleep( $self->{wait_after_bad_set} );
   }
+
   return 0;
 }
 
 sub setVpp
 {
-  my $self = shift;
-  if( !defined( $_[0] ) ) {
+  my ($self, $v, $ch ) = @_;
+  if( !defined( $v ) ) {
     return '';
   }
-  my $v    = 1000.0 * (0.0 + $_[0]);
-  my $reg  = $_[1] ? 26 : 25;
+  my $vi    = 1000.0 * (0.0 + $v);
+  my $reg  = $ch ? 26 : 25;
 
-  my $s = sprintf( "%d", int($v) );
+  my $s = sprintf( "%d", int($vi) );
 
   return $self->setReg( $reg, $s );
 }
@@ -232,14 +234,14 @@ sub setVpp
 
 sub setBias
 {
-  my $self = shift;
-  if( !defined( $_[0] ) ) {
+  my ($self, $bias, $ch ) = @_;
+  if( !defined( $bias ) ) {
     return '';
   }
-  my $v    = 1000 + 100.0 * (0.0 + $_[0]);
-  my $reg  = $_[1] ? 28 : 27;
+  my $bi   = 1000 + 100.0 * (0.0 + $bias);
+  my $reg  = $ch ? 28 : 27;
 
-  my $s = sprintf( "%d", int($v) );
+  my $s = sprintf( "%d", int($bi) );
 
   return $self->setReg( $reg, $s );
 }
@@ -247,40 +249,38 @@ sub setBias
 
 sub setDuty
 {
-  my $self = shift;
-  if( !defined( $_[0] ) ) {
+  my ($self, $du, $ch ) = @_;
+  if( !defined( $du ) ) {
     return '';
   }
-  my $v    = 1000.0 * (0.0 + $_[0]);
-  my $reg  = $_[1] ? 30 : 29;
+  my $dui   = 1000.0 * (0.0 + $du);
+  my $reg  = $ch ? 30 : 29;
 
-  my $s = sprintf( "%d", int($v) );
+  my $s = sprintf( "%d", int($dui) );
 
   return $self->setReg( $reg, $s );
 }
 
 sub getDuty
 {
-  my $self = shift;
-  my $reg  = $_[0] ? 30 : 29;
+  my ($self, $ch ) = @_;
+  my $reg  = $ch ? 30 : 29;
   my $s = $self->getReg( $reg );
   if( !$s ) {
     return 0.0;
   }
-  if( ! ( $s =~ /^(\d+)\./ ) ) {
-    return 0.0;
+
+  if( $s =~ /^(\d+)\./x ) {
+    return ( 0.001 * $1 );
   }
 
-  my $du   = 0.001 * $1;
-
-  return $du;
+  return 0.0;
 }
 
 sub setDutyCheck
 {
-  my $self = shift;
-  my $du = $_[0];
-  my $ch = $_[1];
+  my ($self, $du, $ch ) = @_;
+
   for( my $i=0; $i<$self->{n_try}; ++$i ) {
     my $rc = $self->setDuty( $du, $ch );
     if( ! $rc ) {
@@ -292,7 +292,7 @@ sub setDutyCheck
     if( abs( $du - $du_in ) < 0.01 ) {
       return 1;
     }
-  print( STDERR "?2 \n" );
+  print( STDERR "?2 du= $du du_in = $du_in\n" );
   usleep( $self->{wait_after_bad_set} );
   }
   return 0;
@@ -361,8 +361,7 @@ Anton Guda, E<lt>atu@nmetau.edu.uaE<gt>
 Copyright (C) 2021 by Anton Guda
 
 This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.32.1 or,
-at your option, any later version of Perl 5 you may have available.
+it under the  terms of GPLV3.
 
 
 =cut
