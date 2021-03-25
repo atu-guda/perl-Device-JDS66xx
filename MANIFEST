@@ -1,0 +1,6 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/Device-JDS66xx.t
+lib/Device/JDS66xx.pm
