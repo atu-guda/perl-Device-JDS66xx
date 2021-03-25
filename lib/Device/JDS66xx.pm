@@ -173,36 +173,45 @@ sub mkFreqStr
   return $fs . ',' . $range;
 }
 
-sub setFreq
+sub setVal
 {
-  my ($self, $freq, $ch, $checkNTry ) = @_;
-  my $fs = $self->mkFreqStr( $freq );
-  if( ! $fs ) {
+  my ($self, $val, $reg, $mkStrFun, $checkNTry ) = @_;
+  my $vs = $self->$mkStrFun( $val );
+  if( ! $vs ) {
     return;
   }
-  my $reg  = $ch ? 24 : 23;
+
   if( ! $checkNTry ) {
-    $checkNTry = 1;
+    $checkNTry = 10;
   }
 
   TRY:
   for my $i (1..$checkNTry) {
-    my $rs =  $self->setReg( $reg, $fs );
+    my $rs =  $self->setReg( $reg, $vs );
     if( ! $rs ) {
       usleep( $self->{wait_after_bad_set} );
       next TRY;
       # debug?
     }
     my $gs = $self->getReg( $reg );
-    if( defined($gs) && ( $gs eq $fs ) ) {
-      return $fs;
+    if( defined($gs) && ( $gs eq $vs ) ) {
+      return $vs;
     } else {
       usleep( $self->{wait_after_bad_set} );
-      carp( "get ($gs) != set ($fs) i= $i" );
+      carp( "get ($gs) != set ($vs) i= $i" );
     }
   }
 
   return;
+}
+
+
+sub setFreq
+{
+  my ($self, $freq, $ch, $checkNTry ) = @_;
+  my $reg  = $ch ? 24 : 23;
+  my $fun = \&mkFreqStr;
+  return $self->setVal( $freq, $reg, $fun, $checkNTry );
 }
 
 sub getFreq
@@ -243,7 +252,7 @@ sub getFreq
   return $freq;
 }
 
-sub setFreqCheck
+sub setFreqCheck # TODO: remove, replace with setFreq with checkNTry
 {
   my ($self, $f, $ch ) = @_;
 
