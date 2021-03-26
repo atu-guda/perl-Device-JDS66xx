@@ -126,28 +126,62 @@ sub getReg
   return;
 }
 
-sub OnOff
+sub mkOnOffStr
 {
-  my ($self,$o1,$o2) = @_;
-  $o1  = $o1 ? '1' : '0';
-  $o2  = $o2 ? '1' : '0';
+  my ($self,$o12) = @_;
+  my $o1  = ( $o12 & 1 ) ? '1' : '0'; #unpack
+  my $o2  = ( $o12 & 2 ) ? '1' : '0';
 
   my $s   = $o1 . ',' . $o2;
-
-  return $self->setReg( 20, $s );
+  return $s;
 }
 
-sub setWave
+sub OnOff
 {
-  my ($self, $tp, $ch ) = @_;
+  my ($self, $o1, $o2, $checkNTry ) = @_;
+  my $o12 = 0;
+  if( $o1 ) { # pack
+      $o12 |= 1;
+  }
+  if( $o2 ) {
+      $o12 |= 2;
+  }
+  my $reg  = 20;
+  my $fun = \&mkOnOffStr;
+  return $self->setVal( $o12, $reg, $fun, $checkNTry );
+}
+
+
+sub mkWaveStr
+{
+  my ($self, $tp ) = @_;
   if( !defined( $tp ) ) {
     return;
   }
   $tp   = 0 + $tp;
-  my $reg  = $ch ? 22 : 21;
-
-  return $self->setReg( $reg, '' . $tp );
+  return '' . $tp;
 }
+
+sub setWave
+{
+  my ($self, $tp, $ch, $checkNTry ) = @_;
+  my $reg  = $ch ? 22 : 21;
+  my $fun = \&mkWaveStr;
+  return $self->setVal( $tp, $reg, $fun, $checkNTry );
+}
+
+sub getWave
+{
+  my ($self, $ch ) = @_;
+  my $reg  = $ch ? 22 : 21;
+  my $s = $self->getReg( $reg );
+  if( !$s ) {
+    return 0;
+  }
+
+  return 0 + $s;
+}
+
 
 
 sub mkFreqStr
@@ -295,6 +329,18 @@ sub setVpp
   return $self->setVal( $v, $reg, $fun, $checkNTry );
 }
 
+sub getVpp
+{
+  my ($self, $ch ) = @_;
+  my $reg  = $ch ? 26 : 25;
+  my $s = $self->getReg( $reg );
+  if( !$s ) {
+    return 0;
+  }
+
+  return (0.0+$s) / 1000.0;
+}
+
 
 sub mkBiasStr
 {
@@ -314,6 +360,22 @@ sub setBias
   my $reg  = $ch ? 28 : 27;
   my $fun = \&mkBiasStr;
   return $self->setVal( $bias, $reg, $fun, $checkNTry );
+}
+
+sub getBias
+{
+  my ($self, $ch ) = @_;
+  my $reg  = $ch ? 28 : 27;
+  my $s = $self->getReg( $reg );
+  if( !$s ) {
+    return 0.0;
+  }
+
+  if( $s =~ /^(\d+)/x ) {
+    return ( -10.0 + 0.01 * $1 );
+  }
+
+  return 0.0;
 }
 
 sub mkDutyStr
@@ -346,7 +408,7 @@ sub getDuty
     return 0.0;
   }
 
-  if( $s =~ /^(\d+)\./x ) {
+  if( $s =~ /^(\d+)/x ) {
     return ( 0.001 * $1 );
   }
 
