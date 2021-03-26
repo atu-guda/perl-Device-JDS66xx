@@ -211,7 +211,7 @@ sub setVal
 {
   my ($self, $val, $reg, $mkStrFun, $checkNTry ) = @_;
   my $vs = $self->$mkStrFun( $val );
-  if( ! $vs ) {
+  if( ! defined($vs) || length($vs) < 1 ) {
     return;
   }
 
@@ -229,7 +229,7 @@ sub setVal
     }
     my $gs = $self->getReg( $reg );
     if( defined($gs) && ( $gs eq $vs ) ) {
-      return $vs;
+      return 1;
     } else {
       usleep( $self->{wait_after_bad_set} );
       carp( "setVal: get ($gs) != set ($vs) i= $i" );
@@ -286,27 +286,6 @@ sub getFreq
   return $freq;
 }
 
-sub setFreqCheck # TODO: remove, replace with setFreq with checkNTry
-{
-  my ($self, $f, $ch ) = @_;
-
-  for( my $i=0; $i<$self->{n_try}; ++$i ) {
-    my $rc = $self->setFreq( $f, $ch );
-    if( ! $rc ) {
-      carp( "?1 \n" ); # TODO: hide w/o debug?
-      usleep( $self->{wait_after_bad_set} );
-      next;
-    }
-    my $f_in = $self->getFreq( $ch );
-    if( abs( $f_in - $f ) < 10 ) {
-      return 1;
-    }
-  carp( "?2 f= $f f_in= $f_in \n" ); #  TODO: hide w/o debug?
-  usleep( $self->{wait_after_bad_set} );
-  }
-
-  return 0;
-}
 
 sub mkVppStr
 {
@@ -415,26 +394,6 @@ sub getDuty
   return 0.0;
 }
 
-sub setDutyCheck # TODO: remove
-{
-  my ($self, $du, $ch ) = @_;
-
-  for( my $i=0; $i<$self->{n_try}; ++$i ) {
-    my $rc = $self->setDuty( $du, $ch );
-    if( ! $rc ) {
-      carp( "?1 \n" );
-      usleep( $self->{wait_after_bad_set} );
-      next;
-    }
-    my $du_in = $self->getDuty( $ch );
-    if( abs( $du - $du_in ) < 0.01 ) {
-      return 1;
-    }
-  carp( "?2 du= $du du_in = $du_in\n" );
-  usleep( $self->{wait_after_bad_set} );
-  }
-  return 0;
-}
 
 
 
